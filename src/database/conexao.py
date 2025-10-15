@@ -48,14 +48,38 @@ def _pyodbc_conn_str():
         f"Encrypt={ENCRYPT};TrustServerCertificate={TRUST_CERT};"
     )
 
+class _CursorQmarkWrapper:
+    def __init__(self, cur):
+        self._cur = cur
+    def execute(self, sql, params=None):
+        if params is not None:
+            sql = sql.replace("?", "%s")
+            return self._cur.execute(sql, params)
+        return self._cur.execute(sql)
+    def executemany(self, sql, seq_of_params):
+        if seq_of_params is not None:
+            sql = sql.replace("?", "%s")
+            return self._cur.executemany(sql, seq_of_params)
+        return self._cur.executemany(sql, seq_of_params)
+    def __getattr__(self, name):
+        return getattr(self._cur, name)
+
+class _ConnQmarkWrapper:
+    def __init__(self, conn):
+        self._conn = conn
+    def cursor(self, *a, **k):
+        return _CursorQmarkWrapper(self._conn.cursor(*a, **k))
+    def __getattr__(self, name):
+        return getattr(self._conn, name)
+
 # Usar para cursor.execute, commit, etc.
 def abrir_conexao_sql_server():
     if _USE_PYODBC:
         return pyodbc.connect(_pyodbc_conn_str())
-    import pymssql
     host, port = (SERVER.split(",", 1) + [None])[:2]
     port = int(port) if port else 1433
-    return pymssql.connect(server=host, port=port, user=USER, password=PASSWORD, database=DB, charset="utf8")
+    raw = pymssql.connect(server=host, port=port, user=USER, password=PASSWORD, database=DB, charset="utf8")
+    return _ConnQmarkWrapper(raw) 
 
 # Usar para pd.read_sql, suporte para pd
 def abrir_engine_sql_server():
