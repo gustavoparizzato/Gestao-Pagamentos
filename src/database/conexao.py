@@ -2,22 +2,21 @@
 import os
 import urllib.parse
 import pyodbc
-import streamlit as st
 from sqlalchemy import create_engine
+import pymssql
+import streamlit as st
 
 _SQL_SECRETS = {}
 try:
-    # se houver seção [sql], usa ela;
     _SQL_SECRETS = st.secrets["sql"] if "sql" in st.secrets else dict(st.secrets)
 except Exception:
-    # carrega .env (opcional) e usa os.getenv
     try:
         from dotenv import load_dotenv
         load_dotenv()
     except Exception:
         pass
 
-def _get(name: str, default: str | None = None) -> str | None:
+def _get(name, default=None):
     if _SQL_SECRETS:
         if name in _SQL_SECRETS:
             return _SQL_SECRETS.get(name, default)
@@ -34,11 +33,14 @@ DRIVER     = _get("DRIVER", "ODBC Driver 18 for SQL Server")
 ENCRYPT    = _get("ENCRYPT", "no")
 TRUST_CERT = _get("TRUST_CERT", "no")
 
+# detecta se há driver ODBC do SQL Server no sistema
+_ODBC_DRIVERS = set(pyodbc.drivers())
+_USE_PYODBC = DRIVER in _ODBC_DRIVERS
+
 AUTH = f"UID={USER};PWD={PASSWORD};" if USER and PASSWORD else "Trusted_Connection=yes;"
 
-## Usar para cursor.execute, commit, etc.
-def abrir_conexao_sql_server():
-    return pyodbc.connect(
+def _pyodbc_conn_str():
+    return (
         f"DRIVER={{{DRIVER.strip()}}};"
         f"SERVER={SERVER};"
         f"DATABASE={DB};"
@@ -46,14 +48,26 @@ def abrir_conexao_sql_server():
         f"Encrypt={ENCRYPT};TrustServerCertificate={TRUST_CERT};"
     )
 
-## Usar para pd.read_sql, suporte para pd
+# Usar para cursor.execute, commit, etc.
+def abrir_conexao_sql_server():
+    if _USE_PYODBC:
+        return pyodbc.connect(_pyodbc_conn_str())
+    import pymssql
+    host, port = (SERVER.split(",", 1) + [None])[:2]
+    port = int(port) if port else 1433
+    return pymssql.connect(server=host, port=port, user=USER, password=PASSWORD, database=DB, charset="utf8")
+
+# Usar para pd.read_sql, suporte para pd
 def abrir_engine_sql_server():
-    conn_str = (
-        f"DRIVER={{{DRIVER.strip()}}};"
-        f"SERVER={SERVER};"
-        f"DATABASE={DB};"
-        f"{AUTH}"
-        f"Encrypt={ENCRYPT};TrustServerCertificate={TRUST_CERT};"
-    )
-    params = urllib.parse.quote_plus(conn_str)
-    return create_engine(f"mssql+pyodbc:///?odbc_connect={params}", fast_executemany=True)
+    if _USE_PYODBC:
+        params = urllib.parse.quote_plus(_pyodbc_conn_str())
+        return create_engine(f"mssql+pyodbc:///?odbc_connect={params}", fast_executemany=True)
+    if SERVER and "," in SERVER:
+        host, port = SERVER.split(",", 1)
+        server_for_url = f"{host}:{port}"
+    else:
+        server_for_url = SERVER
+    quoted_user = urllib.parse.quote_plus(USER or "")
+    quoted_pwd  = urllib.parse.quote_plus(PASSWORD or "")
+    url = f"mssql+pymssql://{quoted_user}:{quoted_pwd}@{server_for_url}/{DB}?charset=utf8"
+    return create_engine(url, fast_executemany=True)
