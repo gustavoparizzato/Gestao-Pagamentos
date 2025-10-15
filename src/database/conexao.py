@@ -3,16 +3,30 @@ import pyodbc
 from sqlalchemy import create_engine
 import urllib.parse
 from dotenv import load_dotenv
+import streamlit as st
 
-load_dotenv()
+try:
+    import streamlit as st
+    _S = st.secrets
+    _SQL = _S["sql"] if "sql" in _S else _S
+except Exception:
+    _SQL = {}
 
-SERVER     = os.getenv("SQL_SERVER")
-DB = os.getenv("SQL_DB")
-USER       = os.getenv("SQL_USER")
-PASSWORD   = os.getenv("SQL_PASSWORD")
-DRIVER     = os.getenv("SQL_DRIVER")
-ENCRYPT    = os.getenv("SQL_ENCRYPT", "no")	
-TRUST_CERT = os.getenv("SQL_TRUST_CERT", "no")
+# pega valor de secrets (preferência) ou env var como fallback
+def _get(name, default=None):
+    return (
+        _SQL.get(name) or
+        _SQL.get(f"SQL_{name}") or
+        os.getenv(f"SQL_{name}", default)
+    )
+
+SERVER     = _get("SERVER")
+DB         = _get("DB")
+USER       = _get("USER")
+PASSWORD   = _get("PASSWORD")
+DRIVER     = _get("DRIVER", "ODBC Driver 18 for SQL Server")
+ENCRYPT    = _get("ENCRYPT", "no")
+TRUST_CERT = _get("TRUST_CERT", "no")
 
 AUTH = f"UID={USER};PWD={PASSWORD};" if USER and PASSWORD else "Trusted_Connection=yes;"
 
