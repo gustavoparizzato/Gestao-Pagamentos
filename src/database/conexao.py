@@ -70,4 +70,4 @@ def abrir_engine_sql_server():
     quoted_user = urllib.parse.quote_plus(USER or "")
     quoted_pwd  = urllib.parse.quote_plus(PASSWORD or "")
     url = f"mssql+pymssql://{quoted_user}:{quoted_pwd}@{server_for_url}/{DB}?charset=utf8"
-    return create_engine(url, fast_executemany=True)
+    return create_engine(url)
