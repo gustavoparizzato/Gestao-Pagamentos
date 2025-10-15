@@ -1,24 +1,30 @@
+# conexao.py
 import os
-import pyodbc
-from sqlalchemy import create_engine
 import urllib.parse
-from dotenv import load_dotenv
+import pyodbc
 import streamlit as st
+from sqlalchemy import create_engine
 
+_SQL_SECRETS = {}
 try:
-    import streamlit as st
-    _S = st.secrets
-    _SQL = _S["sql"] if "sql" in _S else _S
+    # se houver seção [sql], usa ela;
+    _SQL_SECRETS = st.secrets["sql"] if "sql" in st.secrets else dict(st.secrets)
 except Exception:
-    _SQL = {}
+    # carrega .env (opcional) e usa os.getenv
+    try:
+        from dotenv import load_dotenv
+        load_dotenv()
+    except Exception:
+        pass
 
-# pega valor de secrets (preferência) ou env var como fallback
-def _get(name, default=None):
-    return (
-        _SQL.get(name) or
-        _SQL.get(f"SQL_{name}") or
-        os.getenv(f"SQL_{name}", default)
-    )
+def _get(name: str, default: str | None = None) -> str | None:
+    if _SQL_SECRETS:
+        if name in _SQL_SECRETS:
+            return _SQL_SECRETS.get(name, default)
+        flat = f"SQL_{name}"
+        if flat in _SQL_SECRETS:
+            return _SQL_SECRETS.get(flat, default)
+    return os.getenv(f"SQL_{name}", default)
 
 SERVER     = _get("SERVER")
 DB         = _get("DB")
