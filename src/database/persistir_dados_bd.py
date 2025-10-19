@@ -5,11 +5,11 @@ def gerar_hash_senha(senha_plana: str) -> str:
     sal = bcrypt.gensalt(rounds=12)
     return bcrypt.hashpw(senha_plana.encode("utf-8"), sal).decode("utf-8")
 
-def cadastrar_cheque(identificadorCheque: int, nomeCliente: str, valor: float, banco: str, dataVencimento: str, dataPagamento: str, criado_por: str):
+def cadastrar_cheque(identificadorCheque: int, nomeCliente: str, valor: float, banco: str, dataVencimento: str, optPagamento: bool, dataPagamento: str, criado_por: str):
     conn = abrir_conexao_sql_server()
     cursor = conn.cursor()
     try:
-        cursor.execute("INSERT INTO Cheques_Receber (identificadorCheque, nomeCliente, valor, banco, dataVencimento, dataPagamento, criado_por) VALUES (?, ?, ?, ?, ?, ?, ?)", (identificadorCheque, nomeCliente.strip(), valor, banco.strip(), dataVencimento, dataPagamento, criado_por))
+        cursor.execute("INSERT INTO Cheques_Pagar (identificadorCheque, nomeCliente, valor, banco, dataVencimento, optPagamento, dataPagamento, criado_por) VALUES (?, ?, ?, ?, ?, ?, ?, ?)", (identificadorCheque, nomeCliente.strip(), valor, banco.strip(), dataVencimento, optPagamento, dataPagamento, criado_por))
         conn.commit()
         return True
     except Exception as e:
@@ -17,7 +17,7 @@ def cadastrar_cheque(identificadorCheque: int, nomeCliente: str, valor: float, b
     finally:
         conn.close()
 
-def atualizar_cheque(idCheque: int, *, identificadorCheque: int = None, nomeCliente: str = None, valor: float = None, banco: str = None, dataVencimento: str = None, dataPagamento: str = None) -> bool:
+def atualizar_cheque(idCheque: int, *, identificadorCheque: int = None, nomeCliente: str = None, valor: float = None, banco: str = None, dataVencimento: str = None, optPagamento: bool = None, dataPagamento: str = None) -> bool:
     sets = []
     valores = []
     if identificadorCheque is not None:
@@ -30,13 +30,15 @@ def atualizar_cheque(idCheque: int, *, identificadorCheque: int = None, nomeClie
         sets.append("banco = ?"); valores.append(banco.strip())
     if dataVencimento is not None:
         sets.append("dataVencimento = ?"); valores.append(dataVencimento)
+    if optPagamento is not None:
+        sets.append("optPagamento = ?"); valores.append(optPagamento)
     if dataPagamento is not None:
         sets.append("dataPagamento = ?"); valores.append(dataPagamento)
     
     if not sets:
         return False
 
-    sql = f"UPDATE Cheques_Receber SET {', '.join(sets)} WHERE idCheque = ?"
+    sql = f"UPDATE Cheques_Pagar SET {', '.join(sets)} WHERE idCheque = ?"
     valores.append(idCheque)
     conn = abrir_conexao_sql_server()
     cursor = conn.cursor()

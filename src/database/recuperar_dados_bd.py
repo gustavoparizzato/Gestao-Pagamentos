@@ -12,8 +12,8 @@ def carregar_cheques_filtros(data_ini, data_fim, identificador=None, nome=None):
     # Usamos limite superior exclusivo (data_fim + 1 dia) para pegar o dia todo
     sql = """
     SELECT idCheque, identificadorCheque, nomeCliente, valor, banco,
-           dataVencimento, dataPagamento, criado_por, criado_em, ultima_modificacao
-    FROM Cheques_Receber
+           dataVencimento, optPagamento, dataPagamento, criado_por, criado_em, ultima_modificacao
+    FROM Cheques_Pagar
     WHERE dataVencimento >= :data_ini
       AND dataVencimento < :data_fim_exclusivo
       {and_ident}

@@ -3,7 +3,7 @@ from datetime import date, timedelta
 import pandas as pd
 from src.menu.menu import menu_navegacao_sidebar
 from src.database.autenticacao import exigir_login, usuario_atual
-from src.database.recuperar_dados_bd import carregar_cheques, carregar_cheques_filtros
+from src.database.recuperar_dados_bd import carregar_cheques_filtros
 from src.database.persistir_dados_bd import cadastrar_cheque, atualizar_cheque
 
 st.title("Cheques")
@@ -20,26 +20,24 @@ if perfil == "admin":
 if perfil == "analista":
     opcoes.append("Realizar Baixas")
 
-modo = st.radio("**Ações**", opcoes, key="settings_mode", horizontal= True)
+modo = st.radio("**Ações**", opcoes, key="settings_mode", horizontal=True)
 
 st.markdown("---")
 
 if modo == "Listar Cheques":
     st.subheader("📋 Cheques a Pagar")
 
-    # data_ini e data_fim padrão (últimos 7 dias)
+    # Período padrão: mês corrente
     hoje = date.today()
     data_inicio = hoje.replace(day=1)
-    # ultimo dia do mês
-    data_fim = hoje.replace(day=1) + timedelta(days=32)
-    data_fim = data_fim.replace(day=1) - timedelta(days=1)
+    data_fim = (hoje.replace(day=1) + timedelta(days=32)).replace(day=1) - timedelta(days=1)
 
     st.markdown("**Campos de Filtros**")
 
     # Campos de filtro
     colf1, colf2, colf3, colf4 = st.columns(4)
     with colf1:
-        ident_num = st.number_input("Identificador do cheque (sem zeros a esquerda)", key="filtro_identificador_cheque", step=1, format="%d")
+        ident_num = st.number_input("Identificador do cheque (sem zeros a esquerda)", key="filtro_identificador_cheque", step=1, format="%d",)
         identificador_cheque = None if ident_num == 0 else int(ident_num)
     with colf2:
         nome_cliente = st.text_input("Nome do cliente", key="filtro_nome_cliente").strip() or None
@@ -60,18 +58,51 @@ if modo == "Listar Cheques":
         st.info("Nenhum cheque encontrado no período selecionado.")
         st.stop()
 
-    # Cabeçalho da tabela
-    cols_head = st.columns([1.2, 2.2, 1.5, 1.8, 1.6, 1.6, 1.5, 1.3])
+    #  Indicadores 
+    df_calc = cheques_df.copy()
+
+    # Garante tipos para os cálculos
+    if "optPagamento" in df_calc.columns:
+        opt = df_calc["optPagamento"].fillna(False).astype(bool)
+    else:
+        opt = pd.Series(False, index=df_calc.index)
+
+    # Converte dataVencimento para date (ignorando tempo)
+    venc = pd.to_datetime(df_calc["dataVencimento"], errors="coerce").dt.date
+
+    # Filtros por período
+    dentro_periodo = (venc >= data_inicio) & (venc <= data_fim)
+    em_aberto_periodo = dentro_periodo & (~opt)
+    pago_periodo = dentro_periodo & (opt)
+    vencido_periodo = (venc < hoje) & (~opt)
+
+    valor_em_aberto = float(df_calc.loc[em_aberto_periodo, "valor"].fillna(0).sum())
+    valor_pago = float(df_calc.loc[pago_periodo, "valor"].fillna(0).sum())
+    valor_vencido = float(df_calc.loc[vencido_periodo, "valor"].fillna(0).sum())
+
+    c1, c2, c3 = st.columns(3)
+    with c1:
+        st.metric("Valor em aberto no período", f"R$ {valor_em_aberto:,.2f}")
+    with c2:
+        st.metric("Valor pago no período", f"R$ {valor_pago:,.2f}")
+    with c3:
+        st.metric("Valor vencido no período", f"R$ {valor_vencido:,.2f}")
+
+    st.markdown("---")
+
+    # Cabeçalho (inclui 'Pago?')
+    cols_head = st.columns([1.1, 2.1, 1.5, 1.6, 1.6, 1.0, 1.6, 1.4, 1.2])
     with cols_head[0]: st.markdown("**Identificador**")
     with cols_head[1]: st.markdown("**Cliente**")
     with cols_head[2]: st.markdown("**Valor (R$)**")
     with cols_head[3]: st.markdown("**Banco**")
     with cols_head[4]: st.markdown("**Data Vencimento**")
-    with cols_head[5]: st.markdown("**Data Pagamento**")
-    with cols_head[6]: st.markdown("**Criado por**")
-    with cols_head[7]: st.markdown("**Ações**")
+    with cols_head[5]: st.markdown("**Pago?**")
+    with cols_head[6]: st.markdown("**Data Pagamento**")
+    with cols_head[7]: st.markdown("**Criado por**")
+    with cols_head[8]: st.markdown("**Ações**")
 
-    # Loop nas linhas (cada cheque)
+    # Linhas 
     for _, row in cheques_df.iterrows():
         cid = row["idCheque"]
         edit_key = f"editing_cheque_{cid}"
@@ -81,23 +112,31 @@ if modo == "Listar Cheques":
 
         # Modo visualização
         if not st.session_state[edit_key]:
-            col = st.columns([1.2, 2.2, 1.5, 1.8, 1.6, 1.6, 1.5, 1.3])
-            with col[0]: st.write(row["identificadorCheque"])
-            with col[1]: st.write(row["nomeCliente"])
-            with col[2]: st.write(f"R$ {row['valor']:.2f}")
-            with col[3]: st.write(row["banco"])
+            col = st.columns([1.1, 2.1, 1.5, 1.6, 1.6, 1.0, 1.6, 1.4, 1.2])
+            with col[0]: 
+                st.write(row["identificadorCheque"])
+            with col[1]: 
+                st.write(row["nomeCliente"])
+            with col[2]: 
+                st.write(f"R$ {row['valor']:.2f}")
+            with col[3]: 
+                st.write(row["banco"])
             with col[4]:
                 if pd.notna(row["dataVencimento"]):
                     st.write(row["dataVencimento"].strftime("%d/%m/%Y"))
                 else:
                     st.write("—")
             with col[5]:
+                pago = bool(row.get("optPagamento", False))
+                st.write("✅" if pago else "❌")
+            with col[6]:
                 if pd.notna(row["dataPagamento"]):
                     st.write(row["dataPagamento"].strftime("%d/%m/%Y"))
                 else:
                     st.write("—")
-            with col[6]: st.write(row.get("criado_por") or "—")
-            with col[7]:
+            with col[7]: 
+                st.write(row.get("criado_por") or "—")
+            with col[8]:
                 if perfil in ["admin", "analista"]:
                     if st.button("✏️ Editar", key=f"btn_edit_{cid}", type="primary"):
                         st.session_state[edit_key] = True
@@ -106,11 +145,11 @@ if modo == "Listar Cheques":
         # Modo edição
         else:
             with st.form(f"form_edit_cheque_{cid}", clear_on_submit=False):
-                col = st.columns([1.2, 2.2, 1.5, 1.8, 1.6, 1.6, 1.5, 1.3])
+                col = st.columns([1.1, 2.1, 1.5, 1.6, 1.6, 1.0, 1.6, 1.4, 1.2])
                 with col[0]:
                     novo_identificador = st.number_input(" ", value=int(row["identificadorCheque"] or 0), step=1, format="%d", key=f"ident_{cid}", label_visibility="collapsed")
                 with col[1]:
-                    novo_cliente = st.text_input(" ", value=str(row["nomeCliente"]), key=f"cliente_{cid}", label_visibility="collapsed")
+                    novo_cliente = st.text_input(" ", value=str(row["nomeCliente"]), key=f"cliente_{cid}", label_visibility="collapsed") 
                 with col[2]:
                     novo_valor = st.number_input(" ", value=float(row["valor"]), min_value=0.01, step=0.01, key=f"valor_{cid}", label_visibility="collapsed")
                 with col[3]:
@@ -121,15 +160,17 @@ if modo == "Listar Cheques":
                         valor_venc = valor_venc.date()
                     novo_vencimento = st.date_input(" ", value=valor_venc, key=f"venc_{cid}", label_visibility="collapsed")
                 with col[5]:
+                    novo_opt_pagamento = st.checkbox(" ", value=bool(row.get("optPagamento", False)), key=f"opt_{cid}",)
+                with col[6]:
                     valor_pag = row["dataPagamento"]
                     if pd.isna(valor_pag):
                         valor_pag = None
                     elif isinstance(valor_pag, pd.Timestamp):
                         valor_pag = valor_pag.date()
                     novo_pagamento = st.date_input(" ", value=valor_pag, key=f"pag_{cid}", label_visibility="collapsed")
-                with col[6]:
-                    st.write(row.get("criado_por") or "—")
                 with col[7]:
+                    st.write(row.get("criado_por") or "—")
+                with col[8]:
                     b1, b2 = st.columns(2)
                     with b1:
                         salvar = st.form_submit_button("✅")
@@ -159,7 +200,8 @@ if modo == "Listar Cheques":
                             banco=novo_banco,
                             valor=novo_valor,
                             dataVencimento=novo_vencimento,
-                            dataPagamento=novo_pagamento
+                            dataPagamento=novo_pagamento,
+                            optPagamento=novo_opt_pagamento,   # << envia boolean
                         )
                         if ok:
                             st.success(f"Cheque {cid} atualizado com sucesso!")
@@ -174,10 +216,15 @@ if modo == "Listar Cheques":
 
     # Expansão: tabela completa
     with st.expander("📊 Visualizar tabela completa (somente leitura)"):
+        cols_show = [
+            "identificadorCheque", "nomeCliente", "valor", "banco",
+            "dataVencimento", "optPagamento", "dataPagamento",
+            "criado_por", "criado_em", "ultima_modificacao"
+        ]
+        cols_show = [c for c in cols_show if c in cheques_df.columns]
+
         st.dataframe(
-            cheques_df[
-                ["identificadorCheque", "nomeCliente", "valor", "banco", "dataVencimento", "dataPagamento", "criado_por", "criado_em", "ultima_modificacao"]
-            ],
+            cheques_df[cols_show],
             hide_index=True,
             column_config={
                 "identificadorCheque": st.column_config.NumberColumn("Identificador", format="%d"),
@@ -185,10 +232,11 @@ if modo == "Listar Cheques":
                 "valor":               st.column_config.NumberColumn("Valor", format="R$ %.2f"),
                 "banco":               st.column_config.TextColumn("Banco"),
                 "dataVencimento":      st.column_config.DateColumn("Vencimento", format="DD/MM/YYYY"),
+                "optPagamento":        st.column_config.CheckboxColumn("Pago?", disabled=True),
                 "dataPagamento":       st.column_config.DateColumn("Pagamento", format="DD/MM/YYYY"),
                 "criado_por":          st.column_config.TextColumn("Criado por"),
-                "criado_em":          st.column_config.DatetimeColumn("Criado em", format="DD/MM/YYYY HH:mm:ss"),
-                "ultima_modificacao": st.column_config.DatetimeColumn("Última modificação", format="DD/MM/YYYY HH:mm:ss"),
+                "criado_em":           st.column_config.DatetimeColumn("Criado em", format="DD/MM/YYYY HH:mm:ss"),
+                "ultima_modificacao":  st.column_config.DatetimeColumn("Última modificação", format="DD/MM/YYYY HH:mm:ss"),
             },
         )
 
@@ -205,14 +253,16 @@ if modo == "Cadastrar Cheques":
             nomeCliente = st.text_input("Nome do Cliente")
             banco = st.text_input("Banco")
         with col2:
-            valor = st.number_input("Valor (R$)", min_value=0.00, step=100.00)  
+            valor = st.number_input("Valor (R$)", min_value=0.00, step=100.00)
             dataVencimento = st.date_input("Data de Vencimento", value=None, format="DD/MM/YYYY")
             dataPagamento = st.date_input("Data de Pagamento (opcional)", value=None, format="DD/MM/YYYY")
+
+        optPagamento = st.checkbox("Pagamento efetuado?", value=False)
 
         salvar = st.form_submit_button("💾 Salvar Cheque", type="primary")
 
         if salvar:
-            nomeCliente = nomeCliente.strip()
+            nomeCliente = (nomeCliente or "").strip()
             if not nomeCliente or valor <= 0:
                 st.error("Nome do cliente e valor maior que 0.00 são obrigatórios.")
                 st.stop()
@@ -225,7 +275,8 @@ if modo == "Cadastrar Cheques":
                     banco=banco,
                     dataVencimento=dataVencimento,
                     dataPagamento=dataPagamento if dataPagamento else None,
-                    criado_por=criado_por
+                    criado_por=criado_por,
+                    optPagamento=optPagamento,
                 )
                 if ok:
                     st.success("✅ Cheque cadastrado com sucesso!")
