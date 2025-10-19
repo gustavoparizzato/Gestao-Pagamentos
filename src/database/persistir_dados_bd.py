@@ -52,6 +52,19 @@ def atualizar_cheque(idCheque: int, *, identificadorCheque: int = None, nomeClie
     finally:
         cursor.close()
         conn.close()
+    
+def excluir_cheque(idCheque: int) -> bool:
+    conn = abrir_conexao_sql_server()
+    cursor = conn.cursor()
+    try:
+        cursor.execute("DELETE FROM Cheques_Pagar WHERE idCheque = ?", (idCheque,))
+        conn.commit()
+        return True
+    except Exception as e:
+        raise
+    finally:
+        cursor.close()
+        conn.close()
 
 # Insere novo usuário na tabela
 def cadastrar_usuario(nome: str, email: str, perfil: str, ativo: bool, senha: str):

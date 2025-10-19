@@ -4,7 +4,7 @@ import pandas as pd
 from src.menu.menu import menu_navegacao_sidebar
 from src.database.autenticacao import exigir_login, usuario_atual
 from src.database.recuperar_dados_bd import carregar_cheques_filtros
-from src.database.persistir_dados_bd import cadastrar_cheque, atualizar_cheque
+from src.database.persistir_dados_bd import cadastrar_cheque, atualizar_cheque, excluir_cheque
 
 st.title("Cheques")
 
@@ -21,6 +21,46 @@ if perfil == "analista":
     opcoes.append("Realizar Baixas")
 
 modo = st.radio("**Ações**", opcoes, key="settings_mode", horizontal=True)
+
+st.session_state["_opened_dialog_this_run"] = False
+st.session_state.setdefault("delete_dialog_open", False)
+st.session_state.setdefault("delete_info", None)
+
+@st.dialog("Confirmar exclusão")
+def confirmar_exclusao_dialog():
+    info = st.session_state.get("delete_info") or {}
+    if not info:
+        st.session_state["delete_dialog_open"] = False
+        return
+
+    st.warning(
+        f"Tem certeza que deseja excluir o cheque **{info['identificador']}** "
+        f"do cliente **{info['cliente']}** no valor de **R$ {info['valor']:.2f}**?\n\n"
+        "Essa ação **não pode ser desfeita**."
+    )
+    c1, c2 = st.columns(2)
+    with c1:
+        confirmar = st.button("✅ Confirmar exclusão", type="primary", key=f"confirm_{info['cid']}")
+    with c2:
+        cancelar = st.button("❌ Cancelar", key=f"cancel_{info['cid']}")
+
+    if cancelar:
+        st.session_state["delete_dialog_open"] = False
+        st.session_state["delete_info"] = None
+        st.rerun()
+
+    if confirmar:
+        try:
+            ok = excluir_cheque(info["cid"])
+            if ok:
+                st.success(f"Cheque {info['cid']} excluído com sucesso!")
+                st.session_state["delete_dialog_open"] = False
+                st.session_state["delete_info"] = None
+                st.rerun()
+            else:
+                st.error("Não foi possível excluir o cheque.")
+        except Exception as e:
+            st.error(f"Erro ao excluir: {e}")
 
 st.markdown("---")
 
@@ -42,10 +82,10 @@ if modo == "Listar Cheques":
     with colf2:
         nome_cliente = st.text_input("Nome do cliente", key="filtro_nome_cliente").strip() or None
     with colf3:
-        data_inicio = st.date_input("Data inicial", value=data_inicio, key="filtro_data_inicio")
+        data_inicio = st.date_input("Data inicial", value=data_inicio, key="filtro_data_inicio", format="DD/MM/YYYY")
     with colf4:
-        data_fim = st.date_input("Data final", value=data_fim, key="filtro_data_fim")
-
+        data_fim = st.date_input("Data final", value=data_fim, key="filtro_data_fim", format="DD/MM/YYYY")
+        
     st.markdown("---")
 
     if data_inicio > data_fim:
@@ -90,8 +130,7 @@ if modo == "Listar Cheques":
 
     st.markdown("---")
 
-    # Cabeçalho (inclui 'Pago?')
-    cols_head = st.columns([1.1, 2.1, 1.5, 1.6, 1.6, 1.0, 1.6, 1.4, 1.2])
+    cols_head = st.columns([1.1, 2.1, 1.5, 1.6, 1.6, 1.0, 1.6, 1.4, 1.2, 1.2])
     with cols_head[0]: st.markdown("**Identificador**")
     with cols_head[1]: st.markdown("**Cliente**")
     with cols_head[2]: st.markdown("**Valor (R$)**")
@@ -101,18 +140,22 @@ if modo == "Listar Cheques":
     with cols_head[6]: st.markdown("**Data Pagamento**")
     with cols_head[7]: st.markdown("**Criado por**")
     with cols_head[8]: st.markdown("**Ações**")
+    with cols_head[9]: st.markdown(" ")
 
     # Linhas 
     for _, row in cheques_df.iterrows():
         cid = row["idCheque"]
         edit_key = f"editing_cheque_{cid}"
+        confirm_key = f"confirm_delete_{cid}"
 
         if edit_key not in st.session_state:
             st.session_state[edit_key] = False
+        if confirm_key not in st.session_state:
+            st.session_state[confirm_key] = False
 
         # Modo visualização
         if not st.session_state[edit_key]:
-            col = st.columns([1.1, 2.1, 1.5, 1.6, 1.6, 1.0, 1.6, 1.4, 1.2])
+            col = st.columns([1.1, 2.1, 1.5, 1.6, 1.6, 1.0, 1.6, 1.4, 1.2, 1.2])
             with col[0]: 
                 st.write(row["identificadorCheque"])
             with col[1]: 
@@ -141,11 +184,22 @@ if modo == "Listar Cheques":
                     if st.button("✏️ Editar", key=f"btn_edit_{cid}", type="primary"):
                         st.session_state[edit_key] = True
                         st.rerun()
+            with col[9]:
+                if perfil in ["admin", "analista"]:
+                    if st.button("🗑️ Excluir", key=f"btn_del_{cid}"):
+                        st.session_state["delete_info"] = {
+                            "cid": cid,
+                            "identificador": row["identificadorCheque"],
+                            "cliente": row["nomeCliente"],
+                            "valor": float(row["valor"]),
+                        }
+                        st.session_state["delete_dialog_open"] = True
+                        st.rerun()
 
         # Modo edição
         else:
             with st.form(f"form_edit_cheque_{cid}", clear_on_submit=False):
-                col = st.columns([1.1, 2.1, 1.5, 1.6, 1.6, 1.0, 1.6, 1.4, 1.2])
+                col = st.columns([1.1, 2.1, 1.5, 1.6, 1.6, 1.0, 1.6, 1.4, 1.2, 1.2])
                 with col[0]:
                     novo_identificador = st.number_input(" ", value=int(row["identificadorCheque"] or 0), step=1, format="%d", key=f"ident_{cid}", label_visibility="collapsed")
                 with col[1]:
@@ -158,7 +212,7 @@ if modo == "Listar Cheques":
                     valor_venc = row["dataVencimento"]
                     if isinstance(valor_venc, pd.Timestamp):
                         valor_venc = valor_venc.date()
-                    novo_vencimento = st.date_input(" ", value=valor_venc, key=f"venc_{cid}", label_visibility="collapsed")
+                    novo_vencimento = st.date_input(" ", value=valor_venc, key=f"venc_{cid}", label_visibility="collapsed", format="DD/MM/YYYY")
                 with col[5]:
                     novo_opt_pagamento = st.checkbox(" ", value=bool(row.get("optPagamento", False)), key=f"opt_{cid}",)
                 with col[6]:
@@ -167,7 +221,7 @@ if modo == "Listar Cheques":
                         valor_pag = None
                     elif isinstance(valor_pag, pd.Timestamp):
                         valor_pag = valor_pag.date()
-                    novo_pagamento = st.date_input(" ", value=valor_pag, key=f"pag_{cid}", label_visibility="collapsed")
+                    novo_pagamento = st.date_input(" ", value=valor_pag, key=f"pag_{cid}", label_visibility="collapsed", format="DD/MM/YYYY")
                 with col[7]:
                     st.write(row.get("criado_por") or "—")
                 with col[8]:
@@ -211,6 +265,10 @@ if modo == "Listar Cheques":
                             st.error("Não foi possível atualizar o cheque.")
                     except Exception as e:
                         st.error(str(e))
+
+    if st.session_state.get("delete_dialog_open") and not st.session_state["_opened_dialog_this_run"]:
+        st.session_state["_opened_dialog_this_run"] = True
+        confirmar_exclusao_dialog()
 
     st.markdown("---")
 
